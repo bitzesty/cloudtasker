@@ -2,7 +2,8 @@
 
 module Cloudtasker
   # Handle execution of workers
-  class WorkerController < ApplicationController
+  class WorkerController < ActionController::Base
+    # No need for CSRF verification on API endpoints
     skip_before_action :verify_authenticity_token, raise: false
 
     # Authenticate all requests.
