@@ -4,14 +4,15 @@ require 'cloudtasker/backend/redis_task'
 
 RSpec.describe Cloudtasker::Backend::RedisTask do
   let(:redis) { described_class.redis }
+  let(:url) { 'http://localhost:300/run' }
   let(:job_payload) do
     {
       http_request: {
         http_method: 'POST',
-        url: 'http://localhost:300/run',
+        url: url,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer 123'
+          Authorization: 'Bearer 123'
         },
         body: { foo: 'bar' }.to_json
       },
@@ -22,7 +23,7 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
     }
   end
   let(:task_id) { '1234' }
-  let(:task) { described_class.new(job_payload.merge(id: task_id)) }
+  let(:task) { described_class.new(**job_payload.merge(id: task_id)) }
 
   describe '.redis' do
     subject { described_class.redis }
@@ -69,9 +70,9 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
     let(:queue) { nil }
     let(:tasks) do
       [
-        described_class.new(job_payload.merge(id: 1, queue: 'critical')),
-        described_class.new(job_payload.merge(id: 2, queue: 'default')),
-        described_class.new(job_payload.merge(id: 3, schedule_time: Time.now + 3600))
+        described_class.new(**job_payload.merge(id: 1, queue: 'critical')),
+        described_class.new(**job_payload.merge(id: 2, queue: 'default')),
+        described_class.new(**job_payload.merge(id: 3, schedule_time: Time.now + 3600))
       ]
     end
 
@@ -94,8 +95,8 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
     let(:queue) { 'some-queue' }
     let(:tasks) do
       [
-        described_class.new(job_payload.merge(id: 1)),
-        described_class.new(job_payload.merge(id: 2))
+        described_class.new(**job_payload.merge(id: 1)),
+        described_class.new(**job_payload.merge(id: 2))
       ]
     end
 
@@ -124,7 +125,7 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
   describe '.find' do
     subject { described_class.find(task_id) }
 
-    let(:expected_record) { described_class.new(job_payload.merge(id: task_id)) }
+    let(:expected_record) { described_class.new(**job_payload.merge(id: task_id)) }
 
     context 'with record found' do
       before { allow(SecureRandom).to receive(:uuid).and_return(task_id) }
@@ -153,7 +154,7 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
   end
 
   describe '.new' do
-    subject { described_class.new(args) }
+    subject { described_class.new(**args) }
 
     let(:id) { '123' }
     let(:args) { job_payload.merge(id: id) }
@@ -242,36 +243,48 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
     subject { task.deliver }
 
     let(:status) { 200 }
-    let!(:http_stub) do
-      stub_request(:post, job_payload.dig(:http_request, :url))
-        .with(
-          headers: {
-            Cloudtasker::Config::TASK_ID_HEADER => task_id,
-            Cloudtasker::Config::RETRY_HEADER => job_payload[:retries]
-          },
-          body: job_payload.dig(:http_request, :body)
-        )
-        .to_return(status: status)
+
+    shared_examples 'of delivering a task' do |protocol|
+      let(:url) { "#{protocol}://localhost:300/run" }
+      let!(:http_stub) do
+        stub_request(:post, job_payload.dig(:http_request, :url))
+          .with(
+            headers: {
+              Cloudtasker::Config::TASK_ID_HEADER => task_id,
+              Cloudtasker::Config::RETRY_HEADER => job_payload[:retries]
+            },
+            body: job_payload.dig(:http_request, :body)
+          )
+          .to_return(status: status)
+      end
+
+      before do
+        allow(task).to receive(:destroy).and_return(true)
+        allow(task).to receive(:retry_later).with(described_class::RETRY_INTERVAL).and_return(true)
+      end
+      after { expect(http_stub).to have_been_requested }
+
+      context 'with success' do
+        after { expect(task).to have_received(:destroy) }
+        after { expect(task).not_to have_received(:retry_later) }
+        it { is_expected.to be_truthy }
+      end
+
+      context 'with failure' do
+        let(:status) { 500 }
+
+        after { expect(task).not_to have_received(:destroy) }
+        after { expect(task).to have_received(:retry_later) }
+        it { is_expected.to be_truthy }
+      end
     end
 
-    before do
-      allow(task).to receive(:destroy).and_return(true)
-      allow(task).to receive(:retry_later).with(described_class::RETRY_INTERVAL).and_return(true)
-    end
-    after { expect(http_stub).to have_been_requested }
-
-    context 'with success' do
-      after { expect(task).to have_received(:destroy) }
-      after { expect(task).not_to have_received(:retry_later) }
-      it { is_expected.to be_truthy }
+    context 'with HTTP' do
+      include_examples 'of delivering a task', 'http'
     end
 
-    context 'with failure' do
-      let(:status) { 500 }
-
-      after { expect(task).not_to have_received(:destroy) }
-      after { expect(task).to have_received(:retry_later) }
-      it { is_expected.to be_truthy }
+    context 'with HTTPS' do
+      include_examples 'of delivering a task', 'https'
     end
   end
 
@@ -279,11 +292,11 @@ RSpec.describe Cloudtasker::Backend::RedisTask do
     subject { task }
 
     context 'with same id' do
-      it { is_expected.to eq(described_class.new(job_payload.merge(id: task_id))) }
+      it { is_expected.to eq(described_class.new(**job_payload.merge(id: task_id))) }
     end
 
     context 'with different id' do
-      it { is_expected.not_to eq(described_class.new(job_payload.merge(id: task_id + 'a'))) }
+      it { is_expected.not_to eq(described_class.new(**job_payload.merge(id: "#{task_id}a"))) }
     end
 
     context 'with different object' do

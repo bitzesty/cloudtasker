@@ -4,12 +4,14 @@ require 'bundler/setup'
 require 'timecop'
 require 'webmock/rspec'
 require 'semantic_logger'
-
-# Configure Rails dummary app
-ENV['RAILS_ENV'] ||= 'test'
-require File.expand_path('dummy/config/environment.rb', __dir__)
-require 'rspec/rails'
 require 'rspec/json_expectations'
+
+# Configure Rails dummary app if Rails is in context
+if Gem.loaded_specs.key?('rails')
+  ENV['RAILS_ENV'] ||= 'test'
+  require File.expand_path('dummy/config/environment.rb', __dir__)
+  require 'rspec/rails'
+end
 
 # Require main library (after Rails has done so)
 require 'cloudtasker'
@@ -19,8 +21,8 @@ require 'cloudtasker/cron'
 require 'cloudtasker/batch'
 
 # Require supporting files
-Dir['./spec/support/**/*.rb'].each { |f| require f }
-Dir['./spec/shared/**/*.rb'].each { |f| require f }
+Dir['./spec/support/**/*.rb'].sort.each { |f| require f }
+Dir['./spec/shared/**/*.rb'].sort.each { |f| require f }
 
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure
@@ -42,7 +44,7 @@ RSpec.configure do |config|
     Cloudtasker::RedisClient.new.clear
   end
 
-  # Note: Retriable is configured in a conditional before
+  # NOTE: Retriable is configured in a conditional before
   # block to avoid requiring the gem in the spec helper. This
   # ensures that classes have defined the proper requires.
   config.before(:all) do

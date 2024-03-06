@@ -45,7 +45,7 @@ module Cloudtasker
           # to use Task Set instead.
           redis.search(key('*')).map do |gid|
             task_id = gid.sub(key(''), '')
-            redis.sadd(key, task_id)
+            redis.sadd(key, [task_id])
             find(task_id)
           end
         end
@@ -88,8 +88,8 @@ module Cloudtasker
 
         # Save job
         redis.write(key(id), payload)
-        redis.sadd(key, id)
-        new(payload.merge(id: id))
+        redis.sadd(key, [id])
+        new(**payload.merge(id: id))
       end
 
       #
@@ -103,7 +103,7 @@ module Cloudtasker
         gid = key(id)
         return nil unless (payload = redis.fetch(gid))
 
-        new(payload.merge(id: id))
+        new(**payload.merge(id: id))
       end
 
       #
@@ -112,7 +112,7 @@ module Cloudtasker
       # @param [String] id The task id.
       #
       def self.delete(id)
-        redis.srem(key, id)
+        redis.srem(key, [id])
         redis.del(key(id))
       end
 
@@ -172,8 +172,12 @@ module Cloudtasker
       # Retry the task later.
       #
       # @param [Integer] interval The delay in seconds before retrying the task
+      # @param [Hash] opts Additional options
+      # @option opts [Boolean] :is_error Increase number of retries. Default to true.
       #
-      def retry_later(interval, is_error: true)
+      def retry_later(interval, opts = {})
+        is_error = opts.to_h.fetch(:is_error, true)
+
         redis.write(
           gid,
           retries: is_error ? retries + 1 : retries,
@@ -182,7 +186,7 @@ module Cloudtasker
           queue: queue,
           dispatch_deadline: dispatch_deadline
         )
-        redis.sadd(self.class.key, id)
+        redis.sadd(self.class.key, [id])
       end
 
       #
@@ -253,7 +257,9 @@ module Cloudtasker
         @http_client ||=
           begin
             uri = URI(http_request[:url])
-            Net::HTTP.new(uri.host, uri.port).tap { |e| e.read_timeout = dispatch_deadline }
+            http = Net::HTTP.new(uri.host, uri.port).tap { |e| e.read_timeout = dispatch_deadline }
+            http.use_ssl = true if uri.instance_of?(URI::HTTPS)
+            http
           end
       end
 

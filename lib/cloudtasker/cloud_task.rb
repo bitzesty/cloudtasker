@@ -8,24 +8,58 @@ module Cloudtasker
     #
     # The backend to use for cloud tasks.
     #
-    # @return [Cloudtasker::Backend::GoogleCloudTask, Cloudtasker::Backend::RedisTask] The cloud task backend.
+    # @return [
+    #   Backend::MemoryTask,
+    #   Cloudtasker::Backend::GoogleCloudTaskV1,
+    #   Cloudtasker::Backend::GoogleCloudTaskV2,
+    #   Cloudtasker::Backend::RedisTask
+    # ] The cloud task backend.
     #
     def self.backend
       # Re-evaluate backend every time if testing mode enabled
       @backend = nil if defined?(Cloudtasker::Testing)
 
-      @backend ||= begin
-        if defined?(Cloudtasker::Testing) && Cloudtasker::Testing.in_memory?
-          require 'cloudtasker/backend/memory_task'
-          Backend::MemoryTask
-        elsif Cloudtasker.config.mode.to_sym == :development
-          require 'cloudtasker/backend/redis_task'
-          Backend::RedisTask
-        else
-          require 'cloudtasker/backend/google_cloud_task'
-          Backend::GoogleCloudTask
-        end
-      end
+      @backend ||= if defined?(Cloudtasker::Testing) && Cloudtasker::Testing.in_memory?
+                     require 'cloudtasker/backend/memory_task'
+                     Backend::MemoryTask
+                   elsif Cloudtasker.config.mode.to_sym == :development
+                     require 'cloudtasker/backend/redis_task'
+                     Backend::RedisTask
+                   else
+                     gct_backend
+                   end
+    end
+
+    #
+    # Return the GoogleCloudTaskV* backend to use based on the version
+    # of the currently installed google-cloud-tasks gem
+    #
+    # @return [
+    #   Cloudtasker::Backend::GoogleCloudTaskV1,
+    #   Cloudtasker::Backend::GoogleCloudTaskV2
+    # ] The google cloud task backend.
+    #
+    def self.gct_backend
+      @gct_backend ||= if !defined?(Google::Cloud::Tasks::VERSION) || Google::Cloud::Tasks::VERSION < '2'
+                         require 'cloudtasker/backend/google_cloud_task_v1'
+                         Backend::GoogleCloudTaskV1
+                       else
+                         require 'cloudtasker/backend/google_cloud_task_v2'
+                         Backend::GoogleCloudTaskV2
+                       end
+    end
+
+    #
+    # Create the google cloud task queue based on provided parameters if it does not exist already.
+    #
+    # @param [String] :name The queue name
+    # @param [Integer] :concurrency The queue concurrency
+    # @param [Integer] :retries The number of retries for the queue
+    #
+    # @return [Google::Cloud::Tasks::V2::Queue, Google::Cloud::Tasks::V2beta3::Queue] The queue
+    #
+    def self.setup_production_queue(**kwargs)
+      gct_backend.setup_queue(**kwargs)
     end
 
     #
@@ -37,7 +71,7 @@ module Cloudtasker
     #
     def self.find(id)
       payload = backend.find(id)&.to_h
-      payload ? new(payload) : nil
+      payload ? new(**payload) : nil
     end
 
     #
@@ -51,7 +85,7 @@ module Cloudtasker
       raise MaxTaskSizeExceededError if payload.to_json.bytesize > Config::MAX_TASK_SIZE
 
       resp = backend.create(payload)&.to_h
-      resp ? new(resp) : nil
+      resp ? new(**resp) : nil
     end
 
     #

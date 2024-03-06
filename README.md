@@ -12,8 +12,6 @@ Cloudtasker also provides optional modules for running [cron jobs](docs/CRON_JOB
 
 A local processing server is also available for development. This local server processes jobs in lieu of Cloud Tasks and allows you to work offline.
 
-**Maturity**: This gem is production-ready. We at Keypup have already processed millions of jobs using Cloudtasker and all related extensions (cron, batch and unique jobs). We are planning to release the official `v1.0.0` somewhere in 2021, in case we've missed any edge-case bug.
-
 ## Summary
 
 1. [Installation](#installation)
@@ -232,15 +230,16 @@ Open a Rails console and enqueue some jobs
 
 The Google Cloud library authenticates via the Google Cloud SDK by default. If you do not have it setup then we recommend you [install it](https://cloud.google.com/sdk/docs/quickstarts).
 
-Other options are available such as using a service account. You can see all authentication options in the [Google Cloud Authentication guide](https://github.com/googleapis/google-cloud-ruby/blob/master/google-cloud-bigquery/AUTHENTICATION.md).
+Other options are available such as using a service account. You can see all authentication options in the [Google Cloud Authentication guide](https://github.com/googleapis/google-cloud-ruby/blob/main/AUTHENTICATION.md).
 
 In order to function properly Cloudtasker requires the authenticated account to have the following IAM permissions:
 - `cloudtasks.tasks.get`
 - `cloudtasks.tasks.create`
 - `cloudtasks.tasks.delete`
 
-To get started quickly you can add the `roles/cloudtasks.queueAdmin` role to your account via the [IAM Console](https://console.cloud.google.com/iam-admin/iam). This is not required if your account is a project admin account.
+To get started quickly you can add the `roles/cloudtasks.admin` role to your account via the [IAM Console](https://console.cloud.google.com/iam-admin/iam). This is not required if your account is a project admin account.
 
+The GCP project ID and region values are not loaded automatically by the Google Cloud library, and must be explicitly defined in the initializer when using Google Cloud Tasks.
 
 ### Cloudtasker initializer
 
@@ -260,15 +259,18 @@ Cloudtasker.configure do |config|
   # config.secret = 'some-long-token'
 
   #
-  # Specify the details of your Google Cloud Task location.
-  #
-  # This not required in development using the Cloudtasker local server.
-  #
+  # Specify the details of your Google Cloud Task location. 
+  # 
+  # This is required when the mode of operation is set to :production
+  # 
   config.gcp_location_id = 'us-central1' # defaults to 'us-east1'
   config.gcp_project_id = 'my-gcp-project'
 
   #
   # Specify the namespace for your Cloud Task queues.
+  #
+  # Specifying a namespace is optional but strongly recommended to keep
+  # queues organised, especially in a micro-service environment.
   #
   # The gem assumes that a least a default queue named 'my-app-default'
   # exists in Cloud Tasks. You can create this default queue using the
@@ -400,6 +402,26 @@ Cloudtasker.configure do |config|
   # Default: no operation
   #
   # config.on_dead = ->(error, worker) { Rollbar.error(error) }
+
+  #
+  # Specify the oidc hash.
+  #
+  # Contains information needed for generating an OpenID Connect token. 
+  # This type of authorization can be used for many scenarios, including calling Cloud Run, 
+  # or endpoints where you intend to validate the token yourself. 
+  # For the oidcs hash, the service_account_email can be found 
+  # under the security details of the cloud run service.
+  # The audience is usually the publicly accessible host for the cloud run service 
+  # (which is the same value configured as the processor_host). If no audience is provided
+  # it will be inferred as the processor_host.
+  # Note: If the oidc token is used for a google cloud run service make sure to include
+  # the iam.serviceAccounts.actAs permission for the service account. 
+  #
+  # See https://openid.net/connect for more information on OpenID Connect tokens.
+  #
+  # Default: nil 
+  #
+  # config.oidc = { service_account_email: 'example@gserviceaccount.com' }
 end
 ```
 
@@ -1087,9 +1109,17 @@ To size the concurrency of your queues you should therefore take the most limiti
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+After checking out the repo, run `bin/setup` to install dependencies.
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+For tests, run `rake` to run the tests. Note that Rails is not in context by default, which means Rails-specific test will not run.
+For tests including Rails-specific tests, run `bundle exec appraisal rails-7.0 rake`
+For all context-specific tests (incl. Rails), run the [appraisal tests](Appraisals) using `bundle exec appraisal rake`.
+
+You can run `bin/console` for an interactive prompt that will allow you to experiment.
+
+To install this gem onto your local machine, run `bundle exec rake install`.
+
+To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
 ## Contributing
 

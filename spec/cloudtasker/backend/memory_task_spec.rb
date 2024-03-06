@@ -10,7 +10,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
         url: 'http://localhost:300/run',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer 123'
+          Authorization: 'Bearer 123'
         },
         body: {
           worker: worker_name,
@@ -28,7 +28,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
         url: 'http://localhost:300/run',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer 123'
+          Authorization: 'Bearer 123'
         },
         body: {
           worker: worker_name2,
@@ -41,9 +41,9 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
   let(:worker_name) { 'TestWorker' }
   let(:worker_name2) { 'TestWorker2' }
   let(:task_id) { '1234' }
-  let(:task) { described_class.new(job_payload.merge(id: task_id)) }
+  let(:task) { described_class.new(**job_payload.merge(id: task_id)) }
   let(:task_id2) { '2434' }
-  let(:task2) { described_class.new(job_payload2.merge(id: task_id2)) }
+  let(:task2) { described_class.new(**job_payload2.merge(id: task_id2)) }
 
   before { described_class.clear }
 
@@ -92,6 +92,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
 
     context 'without filter' do
       it { is_expected.to eq([task, task2]) }
+      it { expect(described_class.all.object_id).not_to eq(described_class.queue.object_id) }
     end
 
     context 'with filter' do
@@ -160,7 +161,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
   end
 
   describe '.new' do
-    subject { described_class.new(job_payload.merge(id: id)) }
+    subject { described_class.new(**job_payload.merge(id: id)) }
 
     let(:id) { '123' }
     let(:expected_attrs) do
@@ -222,7 +223,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
       it { expect { execute }.to raise_error(Cloudtasker::DeadWorkerError) }
     end
 
-    context 'with error and no inline_mode' do
+    context 'with dead worker and no inline_mode' do
       before { allow(described_class).to receive(:inline_mode?).and_return(false) }
       before { allow(worker).to receive(:execute).and_raise(Cloudtasker::DeadWorkerError) }
       after { expect(described_class).to have_received(:delete) }
@@ -230,7 +231,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
       it { expect { execute }.not_to raise_error }
     end
 
-    context 'with error and inline_mode' do
+    context 'with standard error and inline_mode' do
       before { allow(described_class).to receive(:inline_mode?).and_return(true) }
       before { allow(worker).to receive(:execute).and_raise(StandardError) }
       after { expect(described_class).not_to have_received(:delete) }
@@ -238,7 +239,7 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
       it { expect { execute }.to raise_error(StandardError) }
     end
 
-    context 'with error and no inline_mode' do
+    context 'with standard error and no inline_mode' do
       before { allow(described_class).to receive(:inline_mode?).and_return(false) }
       before { allow(worker).to receive(:execute).and_raise(StandardError) }
       after { expect(described_class).not_to have_received(:delete) }
@@ -251,11 +252,11 @@ RSpec.describe Cloudtasker::Backend::MemoryTask do
     subject { task }
 
     context 'with same id' do
-      it { is_expected.to eq(described_class.new(job_payload.merge(id: task_id))) }
+      it { is_expected.to eq(described_class.new(**job_payload.merge(id: task_id))) }
     end
 
     context 'with different id' do
-      it { is_expected.not_to eq(described_class.new(job_payload.merge(id: task_id + 'a'))) }
+      it { is_expected.not_to eq(described_class.new(**job_payload.merge(id: "#{task_id}a"))) }
     end
 
     context 'with different object' do

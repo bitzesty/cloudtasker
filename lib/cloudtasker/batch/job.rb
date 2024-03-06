@@ -10,7 +10,20 @@ module Cloudtasker
       JOBS_NAMESPACE = 'jobs'
       STATES_NAMESPACE = 'states'
 
-      # List of statuses triggering a completion callback
+      # List of sub-job statuses taken into account when evaluating
+      # if the batch is complete.
+      #
+      # Batch jobs go through the following states:
+      # - scheduled: the parent batch has enqueued a worker for the child job
+      # - processing: the child job is running
+      # - completed: the child job has completed successfully
+      # - errored: the child job has encountered an error and must retry
+      # - dead: the child job has exceeded its max number of retries
+      #
+      # The 'dead' status is considered to be a completion status as it
+      # means that the job will never succeed. There is no point in blocking
+      # the batch forever so we proceed forward eventually.
+      #
       COMPLETION_STATUSES = %w[completed dead].freeze
 
       # These callbacks do not need to raise errors on their own
@@ -237,20 +250,14 @@ module Cloudtasker
       end
 
       #
-      # Save the batch.
+      # Save serialized version of the worker.
+      #
+      # This is required to be able to invoke callback methods in the
+      # context of the worker (= instantiated worker) when child workers
+      # complete (success or failure).
       #
       def save
-        # Save serialized version of the worker. This is required to
-        # be able to invoke callback methods in the context of
-        # the worker (= instantiated worker) when child workers
-        # complete (success or failure).
         redis.write(batch_gid, worker.to_h)
-
-        # Stop there if no jobs to save
-        return if jobs.empty?
-
-        # Save list of child workers
-        redis.hset(batch_state_gid, jobs.map { |e| [e.job_id, 'scheduled'] }.to_h)
       end
 
       #
@@ -263,7 +270,7 @@ module Cloudtasker
         migrate_batch_state_to_redis_hash
 
         # Update the batch state batch_id entry with the new status
-        redis.hset(batch_state_gid, batch_id, status) if redis.hexists(batch_state_gid, batch_id)
+        redis.hset(batch_state_gid, batch_id, status)
       end
 
       #
@@ -369,6 +376,9 @@ module Cloudtasker
       #
       # Calculate the progress of the batch.
       #
+      # @param [Integer] depth The depth of calculation. Zero (default) means only immediate
+      #   children will be taken into account.
+      #
       # @return [Cloudtasker::Batch::BatchProgress] The batch progress.
       #
       def progress(depth: 0)
@@ -391,16 +401,25 @@ module Cloudtasker
       #
       # Save the batch and enqueue all child workers attached to it.
       #
-      # @return [Array<Cloudtasker::CloudTask>] The Google Task responses
-      #
       def setup
         return true if jobs.empty?
 
         # Save batch
         save
 
-        # Enqueue all child workers
-        jobs.map(&:schedule)
+        # Schedule all child workers
+        jobs.each do |j|
+          # Schedule the job
+          j.schedule
+
+          # Initialize the batch state unless the job has already started (and taken
+          # hold of its own status)
+          # The batch state is initialized only after the job is scheduled to avoid
+          # having never-ending batches - which could occur if a batch was crashing
+          # while enqueuing children due to a OOM error and since 'scheduled' is a
+          # blocking status.
+          redis.hsetnx(batch_state_gid, j.job_id, 'scheduled')
+        end
       end
 
       #

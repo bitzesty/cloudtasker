@@ -5,10 +5,10 @@ require 'logger'
 module Cloudtasker
   # Holds cloudtasker configuration. See Cloudtasker#configure
   class Config
-    attr_accessor :redis, :store_payloads_in_redis
+    attr_accessor :redis, :store_payloads_in_redis, :gcp_queue_prefix
     attr_writer :secret, :gcp_location_id, :gcp_project_id,
-                :gcp_queue_prefix, :processor_path, :logger, :mode, :max_retries,
-                :dispatch_deadline, :on_error, :on_dead
+                :processor_path, :logger, :mode, :max_retries,
+                :dispatch_deadline, :on_error, :on_dead, :oidc
 
     # Max Cloud Task size in bytes
     MAX_TASK_SIZE = 100 * 1024 # 100 KB
@@ -35,8 +35,12 @@ module Cloudtasker
     # Content Type
     CONTENT_TYPE_HEADER = 'Content-Type'
 
-    # Authorization header
-    AUTHORIZATION_HEADER = 'Authorization'
+    # OIDC Authorization header
+    OIDC_AUTHORIZATION_HEADER = 'Authorization'
+
+    # Custom authentication header that does not conflict with
+    # OIDC authorization header
+    CT_AUTHORIZATION_HEADER = 'X-Cloudtasker-Authorization'
 
     # Default values
     DEFAULT_LOCATION_ID = 'us-east1'
@@ -70,11 +74,6 @@ module Cloudtasker
       Missing host for processing.
       Please specify a processor hostname in form of `https://some-public-dns.example.com`'
     DOC
-    QUEUE_PREFIX_MISSING_ERROR = <<~DOC
-      Missing GCP queue prefix.
-      Please specify a queue prefix in the form of `my-app`.
-      You can create a default queue using the Google SDK via `gcloud tasks queues create my-app-default`
-    DOC
     PROJECT_ID_MISSING_ERROR = <<~DOC
       Missing GCP project ID.
       Please specify a project ID in the cloudtasker configurator.
@@ -82,6 +81,10 @@ module Cloudtasker
     SECRET_MISSING_ERROR = <<~DOC
       Missing cloudtasker secret.
       Please specify a secret in the cloudtasker initializer or add Rails secret_key_base in your credentials
+    DOC
+    OIDC_EMAIL_MISSING_ERROR = <<~DOC
+      Missing OpenID Connect (OIDC) service account email.
+      You specified an OIDC configuration hash but the :service_account_email property is missing.
     DOC
 
     #
@@ -136,7 +139,7 @@ module Cloudtasker
     # @return [Logger, any] The cloudtasker logger.
     #
     def logger
-      @logger ||= defined?(Rails) ? Rails.logger : ::Logger.new(STDOUT)
+      @logger ||= defined?(Rails) ? Rails.logger : ::Logger.new($stdout)
     end
 
     #
@@ -187,15 +190,6 @@ module Cloudtasker
     #
     def processor_path
       @processor_path || DEFAULT_PROCESSOR_PATH
-    end
-
-    #
-    # Return the prefix used for queues.
-    #
-    # @return [String] The prefix of the processing queues.
-    #
-    def gcp_queue_prefix
-      @gcp_queue_prefix || raise(StandardError, QUEUE_PREFIX_MISSING_ERROR)
     end
 
     #
@@ -256,6 +250,21 @@ module Cloudtasker
     #
     def on_dead
       @on_dead || DEFAULT_ON_ERROR
+    end
+
+    #
+    # Return the Open ID Connect configuration to use in tasks.
+    #
+    # @return [Hash] The OIDC configuration
+    #
+    def oidc
+      return unless @oidc
+      raise(StandardError, OIDC_EMAIL_MISSING_ERROR) unless @oidc[:service_account_email]
+
+      {
+        service_account_email: @oidc[:service_account_email],
+        audience: @oidc[:audience] || processor_host
+      }
     end
 
     #

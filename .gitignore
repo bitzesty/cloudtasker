@@ -5,6 +5,7 @@
 /doc/
 /examples/rails/log/*.log
 /examples/rails/tmp/
+/gemfiles/*.gemfile.lock
 /log/
 /pkg/
 /spec/reports/
@@ -13,7 +14,7 @@
 /tmp/
 
 # Ignore lock files (e.g. Gemfile.lock)
-*.lock
+/Gemfile.lock
 
 # rspec failure tracking
 .rspec_status

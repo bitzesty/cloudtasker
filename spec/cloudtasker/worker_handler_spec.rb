@@ -33,23 +33,25 @@ RSpec.describe Cloudtasker::WorkerHandler do
   describe '.log_execution_error' do
     subject { described_class.log_execution_error(worker, error) }
 
-    let(:worker) { instance_double('TestWorker') }
-    let(:error) { instance_double('ArgumentError', backtrace: %w[1 2 3]) }
+    let(:worker) { instance_double(TestWorker) }
+    let(:error) { instance_double(ArgumentError, backtrace: %w[1 2 3]) }
 
-    context 'with ActiveJob worker' do
-      let(:worker) { ActiveJob::QueueAdapters::CloudtaskerAdapter::JobWrapper.new }
+    if defined?(Rails)
+      context 'with ActiveJob worker' do
+        let(:worker) { ActiveJob::QueueAdapters::CloudtaskerAdapter::JobWrapper.new }
 
-      before do
-        expect(worker).not_to receive(:logger)
-        expect(Cloudtasker).not_to receive(:logger)
+        before do
+          expect(worker).not_to receive(:logger)
+          expect(Cloudtasker).not_to receive(:logger)
+        end
+
+        it { is_expected.to be_nil }
       end
-
-      it { is_expected.to be_nil }
     end
 
     context 'with no worker' do
       let(:worker) { nil }
-      let(:logger) { instance_double('ActiveSupport::Logger') }
+      let(:logger) { instance_double(Logger) }
 
       before do
         allow(Cloudtasker).to receive(:logger).and_return(logger)
@@ -60,7 +62,7 @@ RSpec.describe Cloudtasker::WorkerHandler do
     end
 
     context 'with worker' do
-      let(:logger) { instance_double('Cloudtasker::WorkerLogger') }
+      let(:logger) { instance_double(Cloudtasker::WorkerLogger) }
 
       before do
         allow(worker).to receive(:logger).and_return(logger)
@@ -104,7 +106,7 @@ RSpec.describe Cloudtasker::WorkerHandler do
   end
 
   describe '.with_worker_handling' do
-    let(:subject_block) { expect { |b| described_class.with_worker_handling(input_payload, &(block || b)) } }
+    let(:expect_subject_block) { expect { |b| described_class.with_worker_handling(input_payload, &(block || b)) } }
     let(:block) { nil }
 
     let(:args_payload_id) { '111' }
@@ -124,17 +126,17 @@ RSpec.describe Cloudtasker::WorkerHandler do
 
     context 'with redis payload and successful yield' do
       before { described_class.redis.write(args_payload_key, args_payload) }
-      after { expect(args_key_content).to be_blank }
-      it { subject_block.to yield_with_args(be_a(Cloudtasker::Worker)) }
-      it { subject_block.to yield_with_args(have_attributes(extracted_payload)) }
+      after { expect(args_key_content).to be_nil }
+      it { expect_subject_block.to yield_with_args(be_a(Cloudtasker::Worker)) }
+      it { expect_subject_block.to yield_with_args(have_attributes(extracted_payload)) }
     end
 
     context 'with redis payload and reenqueued worker' do
       let(:block) { ->(worker) { worker.job_reenqueued = true } }
 
       before { described_class.redis.write(args_payload_key, args_payload) }
-      after { expect(args_key_content).to be_present }
-      it { subject_block.not_to raise_error }
+      after { expect(args_key_content).to be_truthy }
+      it { expect_subject_block.not_to raise_error }
     end
 
     context 'with redis payload and errored yield' do
@@ -145,9 +147,9 @@ RSpec.describe Cloudtasker::WorkerHandler do
         described_class.redis.write(args_payload_key, args_payload)
         expect(Cloudtasker.config.on_error).to receive(:call).with(job_error, be_a(Cloudtasker::Worker))
       end
-      after { expect(args_key_content).to be_present }
+      after { expect(args_key_content).to be_truthy }
 
-      it { subject_block.to raise_error(job_error) }
+      it { expect_subject_block.to raise_error(job_error) }
     end
 
     context 'with redis payload and invalid worker' do
@@ -158,8 +160,8 @@ RSpec.describe Cloudtasker::WorkerHandler do
         described_class.redis.write(args_payload_key, args_payload)
         expect(Cloudtasker.config.on_error).to receive(:call).with(job_error, be_a(Cloudtasker::Worker))
       end
-      after { expect(args_key_content).to be_present }
-      it { subject_block.to raise_error(job_error) }
+      after { expect(args_key_content).to be_truthy }
+      it { expect_subject_block.to raise_error(job_error) }
     end
 
     context 'with redis payload and Cloudtasker::DeadWorkerError' do
@@ -170,16 +172,16 @@ RSpec.describe Cloudtasker::WorkerHandler do
         described_class.redis.write(args_payload_key, args_payload)
         expect(Cloudtasker.config.on_dead).to receive(:call).with(job_error, be_a(Cloudtasker::Worker))
       end
-      after { expect(args_key_content).to be_blank }
-      it { subject_block.to raise_error(job_error) }
+      after { expect(args_key_content).to be_nil }
+      it { expect_subject_block.to raise_error(job_error) }
     end
 
     context 'with native payload' do
       let(:input_payload) { { 'worker' => 'TestWorker', 'job_id' => 'some-id', 'job_args' => [1, 2] } }
       let(:extracted_payload) { { job_id: 'some-id', job_args: [1, 2] } }
 
-      it { subject_block.to yield_with_args(be_a(Cloudtasker::Worker)) }
-      it { subject_block.to yield_with_args(have_attributes(extracted_payload)) }
+      it { expect_subject_block.to yield_with_args(be_a(Cloudtasker::Worker)) }
+      it { expect_subject_block.to yield_with_args(have_attributes(extracted_payload)) }
     end
   end
 
@@ -188,7 +190,7 @@ RSpec.describe Cloudtasker::WorkerHandler do
 
     let(:input_payload) { { 'foo' => 'bar' } }
     let(:actual_payload) { { 'baz' => 'fooz' } }
-    let(:worker) { instance_double('TestWorker') }
+    let(:worker) { instance_double(TestWorker) }
     let(:ret) { 'some-result' }
 
     before { allow(described_class).to receive(:with_worker_handling).with(input_payload).and_yield(worker) }
@@ -200,24 +202,55 @@ RSpec.describe Cloudtasker::WorkerHandler do
   describe '#task_payload' do
     subject { task.task_payload }
 
-    let(:expected_payload) do
-      {
-        http_request: {
-          http_method: 'POST',
-          url: config.processor_url,
-          headers: {
-            'Content-Type' => 'application/json',
-            'Authorization' => "Bearer #{Cloudtasker::Authenticator.verification_token}"
-          },
-          body: task.worker_payload.to_json
-        },
-        queue: task.worker.job_queue,
-        dispatch_deadline: task.worker.dispatch_deadline
-      }
+    let(:oidc_token) { nil }
+    let(:bearer_token) { 'Bearer 12345' }
+
+    before do
+      allow(config).to receive(:oidc).and_return(oidc_token)
+      allow(Cloudtasker::Authenticator).to receive(:bearer_token).and_return(bearer_token)
     end
 
-    around { |e| Timecop.freeze { e.run } }
-    it { is_expected.to eq(expected_payload) }
+    context 'with HTTP authentication' do
+      let(:expected_payload) do
+        {
+          http_request: {
+            http_method: 'POST',
+            url: config.processor_url,
+            headers: {
+              'Content-Type' => 'application/json',
+              Cloudtasker::Config::CT_AUTHORIZATION_HEADER => bearer_token
+            },
+            body: task.worker_payload.to_json
+          },
+          queue: task.worker.job_queue,
+          dispatch_deadline: task.worker.dispatch_deadline
+        }
+      end
+
+      it { is_expected.to eq(expected_payload) }
+    end
+
+    context 'with OIDC authentication' do
+      let(:oidc_token) { { service_account_email: 'foo@bar.com', audience: 'https://foo.bar' } }
+      let(:expected_payload) do
+        {
+          http_request: {
+            http_method: 'POST',
+            url: config.processor_url,
+            headers: {
+              'Content-Type' => 'application/json',
+              Cloudtasker::Config::CT_AUTHORIZATION_HEADER => bearer_token
+            },
+            oidc_token: oidc_token,
+            body: task.worker_payload.to_json
+          },
+          queue: task.worker.job_queue,
+          dispatch_deadline: task.worker.dispatch_deadline
+        }
+      end
+
+      it { is_expected.to eq(expected_payload) }
+    end
   end
 
   describe '#store_payload_in_redis?' do
@@ -297,7 +330,7 @@ RSpec.describe Cloudtasker::WorkerHandler do
 
     let(:attrs) { {} }
     let(:expected_payload) { task.task_payload }
-    let(:resp) { instance_double('Cloudtasker::CloudTask') }
+    let(:resp) { instance_double(Cloudtasker::CloudTask) }
 
     around { |e| Timecop.freeze { e.run } }
     before { allow(Cloudtasker::CloudTask).to receive(:create).with(expected_payload).and_return(resp) }

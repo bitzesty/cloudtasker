@@ -1,5 +1,39 @@
 # Changelog
 
+## [v0.13.2](https://github.com/keypup-io/cloudtasker/tree/v0.13.2) (2023-07-02)
+
+[Full Changelog](https://github.com/keypup-io/cloudtasker/compare/v0.13.1...v0.13.2)
+
+**Fixed bugs:**
+- Fix concurrency issue when draining test jobs in `fake!` mode
+
+## [v0.13.1](https://github.com/keypup-io/cloudtasker/tree/v0.13.1) (2023-06-19)
+
+[Full Changelog](https://github.com/keypup-io/cloudtasker/compare/v0.13.0...v0.13.1)
+
+**Fixed bugs:**
+- Batch jobs: Gracefully handle errors (e.g. Redis connection error) while setting up child jobs. Previously this could lead to ghost child jobs preventing the parent batch from finishing (child job is registered but is never enqueued)
+- Protobuf: fix formatting of protobuf payload by removig `nil` values and formatting the `dispatch_deadline` as a proper `Google::Protobuf::Duration` (instead of `integer`). Fixes [#94](https://github.com/keypup-io/cloudtasker/issues/94)
+
+
+## [v0.13.0](https://github.com/keypup-io/cloudtasker/tree/v0.13.0) (2022-03-11)
+
+[Full Changelog](https://github.com/keypup-io/cloudtasker/compare/v0.12.2...v0.13.0)
+
+**Improvements:**
+- Dependencies: add support for google-cloud-tasks v2 and while keeping backward compatibility with v1. For existing projects, you may need to run `bundle update google-cloud-tasks` after upgrading cloudtasker to update google-cloud-tasks to the latest version.
+- Ruby 3: Rework method arguments to be compatible with Ruby 3
+- Tests: Separate test environment for Ruby 2 and Ruby 3
+- Tests: Do not load Rails by default and skip Rails-specific tests in non-Rails appraisals
+
+## [v0.12.2](https://github.com/keypup-io/cloudtasker/tree/v0.12.2) (2021-12-31)
+
+[Full Changelog](https://github.com/keypup-io/cloudtasker/compare/v0.12.1...v0.12.2)
+
+**Fixed bugs:**
+- Local server: Fix race condition on thread processing. See [#46](https://github.com/keypup-io/cloudtasker/pull/46)
+- Non-Rails: Fix `arguments_missing?` check for non-rails projects.
+
 ## [v0.12.1](https://github.com/keypup-io/cloudtasker/tree/v0.12.1) (2021-08-25)
 
 [Full Changelog](https://github.com/keypup-io/cloudtasker/compare/v0.12.0...v0.12.1)

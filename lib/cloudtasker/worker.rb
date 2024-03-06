@@ -47,7 +47,7 @@ module Cloudtasker
       return nil unless worker_klass.include?(self)
 
       # Return instantiated worker
-      worker_klass.new(payload.slice(:job_queue, :job_args, :job_id, :job_meta, :job_retries, :task_id))
+      worker_klass.new(**payload.slice(:job_queue, :job_args, :job_id, :job_meta, :job_retries, :task_id))
     rescue NameError
       nil
     end
@@ -63,7 +63,7 @@ module Cloudtasker
       #
       def cloudtasker_options(opts = {})
         opt_list = opts&.map { |k, v| [k.to_sym, v] } || [] # symbolize
-        @cloudtasker_options_hash = Hash[opt_list]
+        @cloudtasker_options_hash = opt_list.to_h
       end
 
       #
@@ -121,7 +121,7 @@ module Cloudtasker
       # @return [Cloudtasker::CloudTask] The Google Task response
       #
       def schedule(args: nil, time_in: nil, time_at: nil, queue: nil)
-        new(job_args: args, job_queue: queue).schedule({ interval: time_in, time_at: time_at }.compact)
+        new(job_args: args, job_queue: queue).schedule(**{ interval: time_in, time_at: time_at }.compact)
       end
 
       #
@@ -174,13 +174,13 @@ module Cloudtasker
     # @return [Integer] The value in seconds.
     #
     def dispatch_deadline
-      @dispatch_deadline ||= [
-        [
-          Config::MIN_DISPATCH_DEADLINE,
-          (self.class.cloudtasker_options_hash[:dispatch_deadline] || Cloudtasker.config.dispatch_deadline).to_i
-        ].max,
-        Config::MAX_DISPATCH_DEADLINE
-      ].min
+      @dispatch_deadline ||= begin
+        configured_deadline = (
+          self.class.cloudtasker_options_hash[:dispatch_deadline] ||
+          Cloudtasker.config.dispatch_deadline
+        ).to_i
+        configured_deadline.clamp(Config::MIN_DISPATCH_DEADLINE, Config::MAX_DISPATCH_DEADLINE)
+      end
     end
 
     #
@@ -239,7 +239,7 @@ module Cloudtasker
     #
     def schedule(**args)
       # Evaluate when to schedule the job
-      time_at = schedule_time(args)
+      time_at = schedule_time(**args)
 
       # Schedule job through client middlewares
       Cloudtasker.config.client_middleware.invoke(self, time_at: time_at) do
@@ -361,7 +361,7 @@ module Cloudtasker
     # @return [Boolean] True if the arguments are missing.
     #
     def arguments_missing?
-      job_args.empty? && [0, -1].exclude?(method(:perform).arity)
+      job_args.empty? && ![0, -1].include?(method(:perform).arity)
     end
 
     #
